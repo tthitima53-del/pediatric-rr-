@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Pediatric RR Camera Counter</title>
+  <style>
+    :root{
+      --bg:#f4fbfa;--card:#ffffff;--ink:#17313a;--muted:#63747c;
+      --brand:#0f766e;--brand2:#14b8a6;--line:#d8e7e4;
+      --good:#15803d;--warn:#b45309;--danger:#b91c1c;--soft:#edf8f6;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif}
+    .app{max-width:720px;margin:auto;padding:14px 12px 34px;min-height:100vh}
+    .brand{display:flex;gap:12px;align-items:center;margin:4px 2px 14px}
+    .logo{width:52px;height:52px;border-radius:17px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:grid;place-items:center;color:#fff;font-size:27px;box-shadow:0 8px 24px #0f766e22}
+    h1{font-size:20px;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:3px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;margin:12px 0;box-shadow:0 8px 28px #17313a0b}
+    .notice{background:#fff9e9;border:1px solid #f1d88e;border-radius:15px;padding:11px 12px;font-size:13px;line-height:1.55}
+    label{font-size:13px;font-weight:800;display:block;margin-bottom:6px}
+    select,button{width:100%;padding:12px 13px;border-radius:14px;border:1px solid var(--line);font-size:16px;background:#fff;color:var(--ink)}
+    button{font-weight:800;cursor:pointer}.primary{background:var(--brand);border-color:var(--brand);color:white}.secondary{background:var(--soft);color:var(--brand)}
+    .dangerbtn{background:#fff3f3;color:var(--danger);border-color:#fecaca}button:disabled{opacity:.45;cursor:not-allowed}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .cameraWrap{position:relative;background:#091517;border-radius:18px;overflow:hidden;aspect-ratio:9/13}
+    video{width:100%;height:100%;object-fit:cover;display:block}
+    canvas{display:none}
+    .roi{position:absolute;left:13%;right:13%;top:37%;height:31%;border:3px solid #66edd5;border-radius:26px;box-shadow:0 0 0 9999px #0005;pointer-events:none}
+    .roi::before{content:"หน้าอก–ท้องให้อยู่ในกรอบ";position:absolute;left:50%;top:-39px;transform:translateX(-50%);white-space:nowrap;background:#073d39;color:white;border-radius:999px;padding:7px 10px;font-size:12px}
+    .overlay{position:absolute;left:0;right:0;bottom:0;padding:14px;background:linear-gradient(transparent,#000c);color:white}
+    .timerline{display:flex;justify-content:space-between;align-items:end;gap:10px;margin-bottom:8px}
+    .timer{font-size:31px;font-weight:900}.camstatus{font-size:12px;line-height:1.3}
+    .progress{height:9px;background:#ffffff40;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:#75f5dd}
+    .metric{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric>div{border:1px solid var(--line);background:#f8fcfb;border-radius:16px;padding:13px}
+    .metric .small{font-size:11px;color:var(--muted)}.metric b{display:block;font-size:23px;margin-top:2px}
+    .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.chip{background:#eef7f5;border-radius:999px;padding:7px 9px;font-size:12px;font-weight:700}
+    .result{border-radius:18px;padding:16px;margin-top:12px;border:1px solid var(--line)}.result h2{font-size:20px;margin:0 0 4px}.result p{margin:4px 0}
+    .good{background:#f1fbf4;border-color:#b9e3c5}.warn{background:#fff8ec;border-color:#fed7aa}.danger{background:#fff1f1;border-color:#fecaca}
+    .hidden{display:none!important}.tiny{font-size:12px;color:var(--muted);line-height:1.55}
+    .permission{padding:15px;border-radius:18px;background:#f8fbff;border:1px solid #cfe0f0;margin-top:12px}.permission b{display:block;margin-bottom:4px}
+    .pulse{display:inline-block;width:15px;height:15px;border-radius:50%;background:#70efd9;margin-right:5px;opacity:.65;vertical-align:-2px}
+    .pulse.on{animation:p .42s ease-out}@keyframes p{0%{transform:scale(.6);opacity:.4}50%{transform:scale(1.55);opacity:1}100%{transform:scale(.7);opacity:.65}}
+    .footer{font-size:11px;color:var(--muted);text-align:center;line-height:1.55;margin-top:18px}
+    @media(max-width:540px){.row,.metric{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="brand">
+    <div class="logo">🫁</div>
+    <div>
+      <h1>ช่วยนับการหายใจเด็กจากกล้อง</h1>
+      <div class="sub">Pediatric Respiratory Rate Camera Counter · Prototype</div>
+    </div>
+  </div>
+
+  <div class="notice">
+    <b>สำหรับช่วยนับเท่านั้น</b> ไม่ใช้แทนการประเมินทางคลินิก เด็กควรสงบ ไม่ร้อง ไม่ดิ้น และต้องประเมินอาการร่วมเสมอ
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>ช่วงอายุเด็ก</label>
+        <select id="age">
+          <option value="">— เลือกช่วงอายุ —</option>
+          <option value="u2m">อายุต่ำกว่า 2 เดือน</option>
+          <option value="2to11m">2 เดือน – &lt;12 เดือน</option>
+          <option value="12mto5y">12 เดือน – &lt;5 ปี</option>
+        </select>
+      </div>
+      <div>
+        <label>โหมด</label>
+        <select id="mode">
+          <option value="smart">30 วินาที + ต่ออัตโนมัติ</option>
+          <option value="60">60 วินาที</option>
+        </select>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip">📷 ไม่บันทึกวิดีโอ</span>
+      <span class="chip">⏱️ เริ่ม 30 วินาที</span>
+      <span class="chip">🔁 ไม่แน่ใจ → ต่อถึง 60 วินาที</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cameraWrap">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="roi"></div>
+      <div class="overlay">
+        <div class="timerline">
+          <div class="camstatus"><span id="pulse" class="pulse"></span><span id="status">ยังไม่เปิดกล้อง</span></div>
+          <div class="timer" id="time">00:00</div>
+        </div>
+        <div class="progress"><div id="bar" class="bar"></div></div>
+      </div>
+    </div>
+    <canvas id="canvas" width="180" height="132"></canvas>
+
+    <div id="permissionBox" class="permission hidden">
+      <b>📷 เปิดกล้องไม่ได้</b>
+      <div id="permissionText" class="tiny"></div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="cameraBtn" class="secondary">เปิดกล้อง</button>
+      <button id="startBtn" class="primary" disabled>เริ่มนับ</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="stopBtn" disabled>หยุด</button>
+      <button id="resetBtn" class="dangerbtn">เริ่มใหม่</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="metric">
+      <div><span class="small">Breath ที่ตรวจพบ</span><b id="breaths">0</b></div>
+      <div><span class="small">RR โดยประมาณ</span><b><span id="rrLive">—</span> <small style="font-size:12px">ครั้ง/นาที</small></b></div>
+      <div><span class="small">คุณภาพสัญญาณ</span><b id="quality">—</b></div>
+      <div><span class="small">Fast breathing</span><b id="cutoff">—</b></div>
+    </div>
+
+    <div id="resultBox" class="result hidden">
+      <h2 id="resultTitle"></h2>
+      <p id="resultText"></p>
+      <p id="resultMeta" class="tiny"></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>วิธีวัดให้ระบบจับได้ง่ายขึ้น</b>
+    <div class="tiny" style="font-size:13px;margin-top:7px">
+      ให้เด็กสงบ • ถือมือถือให้นิ่งหรือวางบนขาตั้ง • เล็งหน้าอก–ท้องในกรอบ •
+      หลีกเลี่ยงเสื้อผ้าหนา/ลายมาก • แสงต้องพอ • หากเด็กดิ้นหรือสัญญาณต่ำให้วัดใหม่
+    </div>
+  </div>
+
+  <div class="footer">
+    Fast-breathing cut-offs ในต้นแบบ: &lt;2 เดือน ≥60, 2–&lt;12 เดือน ≥50,
+    12 เดือน–&lt;5 ปี ≥40 ครั้ง/นาที<br>
+    Algorithm ตรวจการเคลื่อนไหวจากกล้องยังเป็นต้นแบบ ต้อง validation เทียบกับการนับโดยบุคลากรทางการแพทย์ก่อนใช้งานจริง
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = q => document.querySelector(q);
+  const video=$("#video"), canvas=$("#canvas"), ctx=canvas.getContext("2d",{willReadFrequently:true});
+  const age=$("#age"), mode=$("#mode"), cameraBtn=$("#cameraBtn"), startBtn=$("#startBtn"),
+        stopBtn=$("#stopBtn"), resetBtn=$("#resetBtn"), status=$("#status"), timeEl=$("#time"),
+        bar=$("#bar"), breathsEl=$("#breaths"), rrLive=$("#rrLive"), qualityEl=$("#quality"),
+        cutoffEl=$("#cutoff"), resultBox=$("#resultBox"), resultTitle=$("#resultTitle"),
+        resultText=$("#resultText"), resultMeta=$("#resultMeta"), permissionBox=$("#permissionBox"),
+        permissionText=$("#permissionText"), pulse=$("#pulse");
+
+  const cutoffs={u2m:60,"2to11m":50,"12mto5y":40};
+  let stream=null,running=false,startedAt=0,targetSec=30,raf=0,lastSample=0;
+  let signal=[],times=[],lastPeakCount=0,extended=false;
+
+  function updateCutoff(){ cutoffEl.textContent=age.value ? "≥ "+cutoffs[age.value] : "—"; }
+  age.addEventListener("change",updateCutoff); updateCutoff();
+
+  function showCameraHelp(message){
+    permissionBox.classList.remove("hidden");
+    permissionText.textContent=message;
+  }
+  function hideCameraHelp(){ permissionBox.classList.add("hidden"); }
+
+  function cameraErrorMessage(err){
+    const insecure = location.protocol !== "https:" && location.hostname !== "localhost";
+    if(insecure) return "เว็บไซต์นี้ไม่ได้เปิดผ่าน HTTPS กล้องบนมือถือจึงถูกบล็อก กรุณาเปิดจากลิงก์ GitHub Pages ที่ขึ้นต้นด้วย https://";
+    if(err && (err.name==="NotAllowedError" || err.name==="SecurityError"))
+      return "เบราว์เซอร์ไม่ได้รับอนุญาตให้ใช้กล้อง กรุณาแตะไอคอนกุญแจ/การตั้งค่าเว็บไซต์ของ Chrome หรือ Safari แล้วตั้ง Camera = Allow จากนั้นโหลดหน้าใหม่";
+    if(err && err.name==="NotFoundError") return "ไม่พบกล้องบนอุปกรณ์นี้ หรือกล้องถูกปิดใช้งาน";
+    if(err && err.name==="NotReadableError") return "กล้องอาจกำลังถูกแอปอื่นใช้งานอยู่ กรุณาปิดแอปกล้อง/วิดีโออื่นแล้วลองใหม่";
+    return "ไม่สามารถเปิดกล้องได้ กรุณาเปิดด้วย Chrome/Safari รุ่นล่าสุด และตรวจสอบสิทธิ์ Camera";
+  }
+
+  async function openCamera(){
+    hideCameraHelp();
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showCameraHelp("เบราว์เซอร์นี้ไม่รองรับการเปิดกล้องจากเว็บไซต์ กรุณาใช้ Chrome หรือ Safari รุ่นล่าสุด");
+      return;
+    }
+    try{
+      if(stream) stream.getTracks().forEach(t=>t.stop());
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},
+        audio:false
+      });
+      video.srcObject=stream;
+      await video.play();
+      status.textContent="กล้องพร้อม • จัดหน้าอก–ท้องให้อยู่ในกรอบ";
+      startBtn.disabled=false;
+      cameraBtn.textContent="เปิดกล้องใหม่";
+    }catch(err){
+      stream=null;
+      startBtn.disabled=true;
+      status.textContent="เปิดกล้องไม่สำเร็จ";
+      showCameraHelp(cameraErrorMessage(err));
+    }
+  }
+  cameraBtn.onclick=openCamera;
+
+  function resetAll(){
+    running=false; cancelAnimationFrame(raf);
+    startedAt=0;targetSec=30;signal=[];times=[];lastPeakCount=0;extended=false;
+    breathsEl.textContent="0";rrLive.textContent="—";qualityEl.textContent="—";
+    timeEl.textContent="00:00";bar.style.width="0%";resultBox.className="result hidden";
+    stopBtn.disabled=true;startBtn.disabled=!stream;
+    status.textContent=stream?"กล้องพร้อม • จัดหน้าอก–ท้องให้อยู่ในกรอบ":"ยังไม่เปิดกล้อง";
+  }
+  resetBtn.onclick=resetAll;
+
+  function pulseBreath(){
+    pulse.classList.remove("on"); void pulse.offsetWidth; pulse.classList.add("on");
+  }
+
+  function sampleMotion(){
+    if(video.readyState<2) return null;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const x0=Math.floor(canvas.width*.17),x1=Math.floor(canvas.width*.83);
+    const y0=Math.floor(canvas.height*.37),y1=Math.floor(canvas.height*.69);
+    const img=ctx.getImageData(x0,y0,x1-x0,y1-y0).data;
+    const w=x1-x0,h=y1-y0, lum=new Float32Array(w*h);
+    let brightness=0,n=0;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const k=(y*w+x)*4,j=y*w+x;
+        const Y=.2126*img[k]+.7152*img[k+1]+.0722*img[k+2];
+        lum[j]=Y;brightness+=Y;n++;
+      }
+    }
+    brightness/=Math.max(n,1);
+    let g=0, yg=0;
+    for(let y=1;y<h-1;y++){
+      for(let x=1;x<w-1;x++){
+        const j=y*w+x, gy=Math.abs(lum[j+w]-lum[j-w]);
+        if(gy>3){g+=gy;yg+=y*gy;}
+      }
+    }
+    if(g<1) return null;
+    return {v:yg/g,brightness};
+  }
+
+  function movingAverage(a,w){
+    const out=[];let s=0;
+    for(let i=0;i<a.length;i++){s+=a[i];if(i>=w)s-=a[i-w];out.push(s/Math.min(w,i+1));}
+    return out;
+  }
+
+  function analyze(){
+    if(signal.length<30) return {rr:null,count:0,q:0,peaks:[]};
+    let s=movingAverage(signal,5), trend=movingAverage(s,35);
+    s=s.map((v,i)=>v-trend[i]);
+    const mean=s.reduce((a,b)=>a+b,0)/s.length;
+    const sd=Math.sqrt(s.reduce((a,b)=>a+(b-mean)**2,0)/s.length)||1e-6;
+    const z=s.map(v=>(v-mean)/sd);
+    const p=[];
+    for(let i=2;i<z.length-2;i++){
+      if(z[i]>.28 && z[i]>=z[i-1] && z[i]>z[i+1]){
+        const t=times[i];
+        if(!p.length || t-p[p.length-1].t>=500) p.push({i,t,z:z[i]});
+        else if(z[i]>p[p.length-1].z) p[p.length-1]={i,t,z:z[i]};
+      }
+    }
+    const elapsed=(times[times.length-1]-times[0])/1000;
+    const rr=elapsed>7?p.length/elapsed*60:null;
+    let regularity=.45;
+    if(p.length>=4){
+      const ints=[];for(let i=1;i<p.length;i++)ints.push((p[i].t-p[i-1].t)/1000);
+      const m=ints.reduce((a,b)=>a+b,0)/ints.length;
+      const sdi=Math.sqrt(ints.reduce((a,b)=>a+(b-m)**2,0)/ints.length);
+      regularity=Math.max(0,Math.min(1,1-(sdi/Math.max(.1,m))/0.65));
+    }
+    const amp=Math.min(1,sd/.22);
+    const q=Math.max(0,Math.min(1,.55*amp+.45*regularity));
+    return {rr,count:p.length,q,peaks:p};
+  }
+
+  function needsExtension(rr,q){
+    if(mode.value==="60") return true;
+    const c=cutoffs[age.value];
+    if(!c || !rr) return true;
+    return q<.62 || Math.abs(rr-c)<=6 || rr<12 || rr>80;
+  }
+
+  function showResult(rr,q,duration){
+    const c=cutoffs[age.value];
+    let cls="good",title="🟢 ไม่เข้าเกณฑ์หายใจเร็ว",txt=`RR ${Math.round(rr)} ครั้ง/นาที`;
+    if(q<.50){
+      cls="warn";title="🟠 คุณภาพการวัดต่ำ";txt="ผลอาจคลาดเคลื่อน แนะนำจัดเด็กให้นิ่งและวัดซ้ำ";
+    }else if(rr>=c){
+      cls="danger";title="🔴 พบหายใจเร็วตามเกณฑ์อายุ";txt=`RR ${Math.round(rr)} ครั้ง/นาที · เกณฑ์ ≥ ${c} ครั้ง/นาที`;
+    }else if(rr<12){
+      cls="warn";title="🟠 ค่า RR ต่ำมากหรือระบบจับสัญญาณไม่ครบ";txt=`RR ${Math.round(rr)} ครั้ง/นาที · กรุณาประเมินเด็กและวัดซ้ำ`;
+    }else{
+      txt=`RR ${Math.round(rr)} ครั้ง/นาที · ต่ำกว่าเกณฑ์ Fast breathing (${c} ครั้ง/นาที)`;
+    }
+    resultBox.className="result "+cls;resultTitle.textContent=title;resultText.textContent=txt;
+    resultMeta.textContent=`วัด ${duration} วินาที · คุณภาพสัญญาณ ${Math.round(q*100)}% · ผลจากกล้องเป็นเครื่องมือช่วยนับ`;
+  }
+
+  function finish(){
+    running=false;cancelAnimationFrame(raf);
+    const a=analyze(),duration=Math.round((performance.now()-startedAt)/1000);
+    if(!a.rr){
+      resultBox.className="result warn";resultTitle.textContent="🟠 สัญญาณไม่เพียงพอ";
+      resultText.textContent="ระบบยังคำนวณ RR ไม่ได้ กรุณาจัดกรอบให้เห็นหน้าอก–ท้องชัดและวัดใหม่";
+      resultMeta.textContent="ไม่บันทึกวิดีโอ";
+    }else showResult(a.rr,a.q,duration);
+    stopBtn.disabled=true;startBtn.disabled=false;status.textContent="วัดเสร็จแล้ว";
+  }
+  stopBtn.onclick=finish;
+
+  function loop(now){
+    if(!running) return;
+    const elapsed=(now-startedAt)/1000;
+    timeEl.textContent=`00:${String(Math.min(60,Math.floor(elapsed))).padStart(2,"0")}`;
+    bar.style.width=Math.min(100,elapsed/targetSec*100)+"%";
+
+    if(now-lastSample>100){
+      lastSample=now;
+      const m=sampleMotion();
+      if(m && m.brightness>20 && m.brightness<245){
+        signal.push(m.v);times.push(now);
+        const a=analyze();
+        qualityEl.textContent=Math.round(a.q*100)+"%";
+        breathsEl.textContent=a.count;
+        if(a.rr && elapsed>8) rrLive.textContent=Math.round(a.rr);
+        if(a.count>lastPeakCount){lastPeakCount=a.count;pulseBreath();}
+        status.textContent=a.q<.45?"สัญญาณไม่นิ่ง • วางมือถือให้นิ่ง":"กำลังวิเคราะห์หน้าอก–ท้อง";
+      }else status.textContent="แสงไม่เหมาะหรือยังจับบริเวณหน้าอก–ท้องไม่ได้";
+    }
+
+    if(elapsed>=targetSec){
+      const a=analyze();
+      if(targetSec===30 && !extended && needsExtension(a.rr,a.q)){
+        extended=true;targetSec=60;status.textContent="กำลังนับต่ออีก 30 วินาทีเพื่อยืนยัน";
+      }else{finish();return;}
+    }
+    raf=requestAnimationFrame(loop);
+  }
+
+  startBtn.onclick=()=>{
+    if(!age.value){alert("กรุณาเลือกช่วงอายุเด็กก่อน");return;}
+    if(!stream){showCameraHelp("กรุณากด “เปิดกล้อง” และอนุญาต Camera ก่อนเริ่มนับ");return;}
+    signal=[];times=[];lastPeakCount=0;extended=false;
+    targetSec=mode.value==="60"?60:30;
+    resultBox.className="result hidden";breathsEl.textContent="0";rrLive.textContent="—";qualityEl.textContent="—";
+    running=true;startedAt=performance.now();lastSample=0;
+    startBtn.disabled=true;stopBtn.disabled=false;status.textContent="กำลังเริ่มวัด…";
+    raf=requestAnimationFrame(loop);
+  };
+
+  window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
+})();
+</script>
+</body>
+</html>

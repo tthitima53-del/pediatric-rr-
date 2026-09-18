@@ -53,7 +53,7 @@
     <div class="logo">🫁</div>
     <div>
       <h1>ช่วยนับการหายใจเด็กจากกล้อง</h1>
-      <div class="sub">Pediatric Respiratory Rate Camera Counter · Prototype</div>
+      <div class="sub">Pediatric Respiratory Rate Camera Counter · อายุ 0–15 ปี · Prototype</div>
     </div>
   </div>
 
@@ -70,6 +70,8 @@
           <option value="u2m">อายุต่ำกว่า 2 เดือน</option>
           <option value="2to11m">2 เดือน – &lt;12 เดือน</option>
           <option value="12mto5y">12 เดือน – &lt;5 ปี</option>
+          <option value="5to11y">5–11 ปี</option>
+          <option value="12to15y">12–15 ปี</option>
         </select>
       </div>
       <div>
@@ -121,7 +123,7 @@
       <div><span class="small">Breath ที่ตรวจพบ</span><b id="breaths">0</b></div>
       <div><span class="small">RR โดยประมาณ</span><b><span id="rrLive">—</span> <small style="font-size:12px">ครั้ง/นาที</small></b></div>
       <div><span class="small">คุณภาพสัญญาณ</span><b id="quality">—</b></div>
-      <div><span class="small">Fast breathing</span><b id="cutoff">—</b></div>
+      <div><span class="small">เกณฑ์ตามอายุ</span><b id="cutoff">—</b></div>
     </div>
 
     <div id="resultBox" class="result hidden">
@@ -140,8 +142,10 @@
   </div>
 
   <div class="footer">
-    Fast-breathing cut-offs ในต้นแบบ: &lt;2 เดือน ≥60, 2–&lt;12 เดือน ≥50,
-    12 เดือน–&lt;5 ปี ≥40 ครั้ง/นาที<br>
+    &lt;5 ปี: ใช้ WHO/IMCI Fast-breathing cut-offs (&lt;2 เดือน ≥60, 2–&lt;12 เดือน ≥50,
+    12 เดือน–&lt;5 ปี ≥40 ครั้ง/นาที)<br>
+    อายุ 5–11 ปี: ช่วงอ้างอิง RR 16–30 · อายุ 12–15 ปี: 16–25 ครั้ง/นาที
+    (Children’s Health Queensland CEWT)<br>
     Algorithm ตรวจการเคลื่อนไหวจากกล้องยังเป็นต้นแบบ ต้อง validation เทียบกับการนับโดยบุคลากรทางการแพทย์ก่อนใช้งานจริง
   </div>
 </div>
@@ -157,11 +161,20 @@
         resultText=$("#resultText"), resultMeta=$("#resultMeta"), permissionBox=$("#permissionBox"),
         permissionText=$("#permissionText"), pulse=$("#pulse");
 
-  const cutoffs={u2m:60,"2to11m":50,"12mto5y":40};
+  const ageRules={
+    u2m:{type:"whoFast",fast:60,label:"Fast ≥60"},
+    "2to11m":{type:"whoFast",fast:50,label:"Fast ≥50"},
+    "12mto5y":{type:"whoFast",fast:40,label:"Fast ≥40"},
+    "5to11y":{type:"range",min:16,max:30,label:"16–30"},
+    "12to15y":{type:"range",min:16,max:25,label:"16–25"}
+  };
   let stream=null,running=false,startedAt=0,targetSec=30,raf=0,lastSample=0;
   let signal=[],times=[],lastPeakCount=0,extended=false;
 
-  function updateCutoff(){ cutoffEl.textContent=age.value ? "≥ "+cutoffs[age.value] : "—"; }
+  function updateCutoff(){
+    const r=ageRules[age.value];
+    cutoffEl.textContent=r ? r.label : "—";
+  }
   age.addEventListener("change",updateCutoff); updateCutoff();
 
   function showCameraHelp(message){
@@ -284,24 +297,52 @@
 
   function needsExtension(rr,q){
     if(mode.value==="60") return true;
-    const c=cutoffs[age.value];
-    if(!c || !rr) return true;
-    return q<.62 || Math.abs(rr-c)<=6 || rr<12 || rr>80;
+    const r=ageRules[age.value];
+    if(!r || !rr) return true;
+    if(q<.62 || rr<8 || rr>90) return true;
+
+    // ถ้าอยู่ใกล้เส้นแบ่ง ให้ต่อถึง 60 วินาทีเพื่อยืนยัน
+    if(r.type==="whoFast") return Math.abs(rr-r.fast)<=6;
+    return Math.abs(rr-r.min)<=4 || Math.abs(rr-r.max)<=4;
   }
 
   function showResult(rr,q,duration){
-    const c=cutoffs[age.value];
-    let cls="good",title="🟢 ไม่เข้าเกณฑ์หายใจเร็ว",txt=`RR ${Math.round(rr)} ครั้ง/นาที`;
+    const r=ageRules[age.value];
+    let cls="good",title="",txt="";
+
     if(q<.50){
-      cls="warn";title="🟠 คุณภาพการวัดต่ำ";txt="ผลอาจคลาดเคลื่อน แนะนำจัดเด็กให้นิ่งและวัดซ้ำ";
-    }else if(rr>=c){
-      cls="danger";title="🔴 พบหายใจเร็วตามเกณฑ์อายุ";txt=`RR ${Math.round(rr)} ครั้ง/นาที · เกณฑ์ ≥ ${c} ครั้ง/นาที`;
-    }else if(rr<12){
-      cls="warn";title="🟠 ค่า RR ต่ำมากหรือระบบจับสัญญาณไม่ครบ";txt=`RR ${Math.round(rr)} ครั้ง/นาที · กรุณาประเมินเด็กและวัดซ้ำ`;
+      cls="warn";
+      title="🟠 คุณภาพการวัดต่ำ";
+      txt="ผลอาจคลาดเคลื่อน แนะนำจัดเด็กให้นิ่งและวัดซ้ำ";
+    }else if(r.type==="whoFast"){
+      if(rr>=r.fast){
+        cls="danger";
+        title="🔴 พบหายใจเร็วตามเกณฑ์อายุ";
+        txt=`RR ${Math.round(rr)} ครั้ง/นาที · เกณฑ์ Fast breathing ≥ ${r.fast} ครั้ง/นาที`;
+      }else{
+        cls="good";
+        title="🟢 ไม่เข้าเกณฑ์หายใจเร็ว";
+        txt=`RR ${Math.round(rr)} ครั้ง/นาที · ต่ำกว่าเกณฑ์ Fast breathing (${r.fast} ครั้ง/นาที)`;
+      }
     }else{
-      txt=`RR ${Math.round(rr)} ครั้ง/นาที · ต่ำกว่าเกณฑ์ Fast breathing (${c} ครั้ง/นาที)`;
+      if(rr>r.max){
+        cls="danger";
+        title="🔴 RR สูงกว่าช่วงอ้างอิงตามอายุ";
+        txt=`RR ${Math.round(rr)} ครั้ง/นาที · ช่วงอ้างอิง ${r.min}–${r.max} ครั้ง/นาที`;
+      }else if(rr<r.min){
+        cls="warn";
+        title="🟠 RR ต่ำกว่าช่วงอ้างอิงตามอายุ";
+        txt=`RR ${Math.round(rr)} ครั้ง/นาที · ช่วงอ้างอิง ${r.min}–${r.max} ครั้ง/นาที · กรุณาประเมินอาการร่วม`;
+      }else{
+        cls="good";
+        title="🟢 RR อยู่ในช่วงอ้างอิงตามอายุ";
+        txt=`RR ${Math.round(rr)} ครั้ง/นาที · ช่วงอ้างอิง ${r.min}–${r.max} ครั้ง/นาที`;
+      }
     }
-    resultBox.className="result "+cls;resultTitle.textContent=title;resultText.textContent=txt;
+
+    resultBox.className="result "+cls;
+    resultTitle.textContent=title;
+    resultText.textContent=txt;
     resultMeta.textContent=`วัด ${duration} วินาที · คุณภาพสัญญาณ ${Math.round(q*100)}% · ผลจากกล้องเป็นเครื่องมือช่วยนับ`;
   }
 

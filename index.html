@@ -53,7 +53,7 @@
     <div class="logo">🫁</div>
     <div>
       <h1>ช่วยนับการหายใจเด็กจากกล้อง</h1>
-      <div class="sub">Pediatric Respiratory Rate Camera Counter · อายุ 0–15 ปี · Prototype</div>
+      <div class="sub">Pediatric Respiratory Rate Camera Counter · อายุ 0–15 ปี · Algorithm V2</div>
     </div>
   </div>
 
@@ -146,7 +146,7 @@
     12 เดือน–&lt;5 ปี ≥40 ครั้ง/นาที)<br>
     อายุ 5–11 ปี: ช่วงอ้างอิง RR 16–30 · อายุ 12–15 ปี: 16–25 ครั้ง/นาที
     (Children’s Health Queensland CEWT)<br>
-    Algorithm ตรวจการเคลื่อนไหวจากกล้องยังเป็นต้นแบบ ต้อง validation เทียบกับการนับโดยบุคลากรทางการแพทย์ก่อนใช้งานจริง
+    Algorithm V2 วิเคราะห์ความถี่ของการขยับหน้าอก–ท้องตลอดช่วงวัด เพื่อลดการนับตกใน RR ที่เร็ว · ยังต้อง validation เทียบกับการนับโดยบุคลากรทางการแพทย์ก่อนใช้งานจริง
   </div>
 </div>
 
@@ -267,32 +267,71 @@
   }
 
   function analyze(){
-    if(signal.length<30) return {rr:null,count:0,q:0,peaks:[]};
-    let s=movingAverage(signal,5), trend=movingAverage(s,35);
-    s=s.map((v,i)=>v-trend[i]);
-    const mean=s.reduce((a,b)=>a+b,0)/s.length;
-    const sd=Math.sqrt(s.reduce((a,b)=>a+(b-mean)**2,0)/s.length)||1e-6;
-    const z=s.map(v=>(v-mean)/sd);
-    const p=[];
-    for(let i=2;i<z.length-2;i++){
-      if(z[i]>.28 && z[i]>=z[i-1] && z[i]>z[i+1]){
-        const t=times[i];
-        if(!p.length || t-p[p.length-1].t>=500) p.push({i,t,z:z[i]});
-        else if(z[i]>p[p.length-1].z) p[p.length-1]={i,t,z:z[i]};
+    if(signal.length<50) return {rr:null,count:0,q:0,peaks:[]};
+
+    // V2: estimate respiratory frequency from the whole motion waveform.
+    // This is more stable for faster breathing than counting individual peaks.
+    let s=movingAverage(signal,3);
+    const n=s.length;
+    const t=times.map(v=>(v-times[0])/1000);
+
+    // Remove linear drift caused by small camera movement.
+    let sumT=0,sumY=0,sumTT=0,sumTY=0;
+    for(let i=0;i<n;i++){
+      sumT+=t[i]; sumY+=s[i]; sumTT+=t[i]*t[i]; sumTY+=t[i]*s[i];
+    }
+    const den=n*sumTT-sumT*sumT;
+    const slope=Math.abs(den)>1e-9 ? (n*sumTY-sumT*sumY)/den : 0;
+    const intercept=(sumY-slope*sumT)/n;
+    let x=s.map((v,i)=>v-(intercept+slope*t[i]));
+
+    const mean=x.reduce((a,b)=>a+b,0)/n;
+    const sd=Math.sqrt(x.reduce((a,b)=>a+(b-mean)*(b-mean),0)/n)||1e-6;
+    x=x.map(v=>(v-mean)/sd);
+
+    function powerAtBpm(bpm){
+      const f=bpm/60;
+      let c=0,ss=0;
+      for(let i=0;i<n;i++){
+        const a=2*Math.PI*f*t[i];
+        c+=x[i]*Math.cos(a);
+        ss+=x[i]*Math.sin(a);
       }
+      return (c*c+ss*ss)/(n*n);
     }
+
+    // Coarse scan: 8–90 breaths/min.
+    let bestBpm=0,bestPower=-1;
+    const coarse=[];
+    for(let bpm=8;bpm<=90;bpm+=1){
+      const p=powerAtBpm(bpm);
+      coarse.push({bpm,p});
+      if(p>bestPower){bestPower=p;bestBpm=bpm;}
+    }
+
+    // Fine scan around the strongest frequency.
+    let fineBestBpm=bestBpm,fineBestPower=bestPower;
+    for(let bpm=Math.max(8,bestBpm-1);bpm<=Math.min(90,bestBpm+1);bpm+=0.1){
+      const p=powerAtBpm(bpm);
+      if(p>fineBestPower){fineBestPower=p;fineBestBpm=bpm;}
+    }
+
+    // Compare with the strongest clearly different frequency.
+    let secondPower=0;
+    for(const r of coarse){
+      if(Math.abs(r.bpm-fineBestBpm)>=5 && r.p>secondPower) secondPower=r.p;
+    }
+
+    const dominance=fineBestPower/(secondPower+1e-6);
+    const qPower=Math.max(0,Math.min(1,(fineBestPower-0.025)/0.38));
+    const qDom=Math.max(0,Math.min(1,(dominance-1.0)/1.5));
+    const q=Math.max(0,Math.min(1,0.75*qPower+0.25*qDom));
+
     const elapsed=(times[times.length-1]-times[0])/1000;
-    const rr=elapsed>7?p.length/elapsed*60:null;
-    let regularity=.45;
-    if(p.length>=4){
-      const ints=[];for(let i=1;i<p.length;i++)ints.push((p[i].t-p[i-1].t)/1000);
-      const m=ints.reduce((a,b)=>a+b,0)/ints.length;
-      const sdi=Math.sqrt(ints.reduce((a,b)=>a+(b-m)**2,0)/ints.length);
-      regularity=Math.max(0,Math.min(1,1-(sdi/Math.max(.1,m))/0.65));
-    }
-    const amp=Math.min(1,sd/.22);
-    const q=Math.max(0,Math.min(1,.55*amp+.45*regularity));
-    return {rr,count:p.length,q,peaks:p};
+    const rr=elapsed>7 ? fineBestBpm : null;
+    const count=rr ? Math.max(0,Math.round(rr*elapsed/60)) : 0;
+
+    return {rr,count,q,peaks:[]};
   }
 
   function needsExtension(rr,q){
